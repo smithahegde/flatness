@@ -1,0 +1,130 @@
+import numpy as np
+import cv2
+from PIL import Image
+from tkinter import filedialog, Tk
+import os
+import matplotlib.pyplot as pt
+import sys
+sys.path.insert(0,'D:\\Edinburgh_files\\python')
+from poles_position import GetLengthAndWidth
+from scipy import ndimage
+from skimage import segmentation
+from skimage import measure
+from scipy import stats
+from scipy.stats import norm, skew,kurtosis
+
+def GetFileNamesFromFolder(path,fileOnly = True):
+    '''
+    Retrives all names of files in folder
+    '''
+    filenames = os.listdir(path+"/")
+    if fileOnly:
+        return filenames
+    else:
+        folderAndNames = []
+        for f in filenames:
+            folderAndNames.append(os.path.join(path,f))
+        return folderAndNames
+
+def StripImageFiles(fileNames, OKExtensions =["tiff","tif"]):
+    '''
+    Removes files with the wrong extension from a list of files
+    '''
+    acceptedFiles = []
+    for f in fileNames:
+        if f.split(".")[-1] in OKExtensions:
+            acceptedFiles.append(f)
+    return acceptedFiles
+
+files='D:\\Edinburgh_files\\data\\D550-D7-MM9-180531\\slide1\\boxes'
+
+box=np.empty(5)
+for f in os.listdir(files):
+    with open(os.path.join(files,f),"r") as boxes:
+       for line in boxes:
+           line=line.rstrip().split()
+           line=float(line[0]),float(line[1]),float(line[2]),float(line[3]),float(line[4])
+           box=np.vstack((box,line))
+def threshold(Image):
+    '''
+    Thresholding 
+    '''
+    background=np.amin(Image)  
+    normimage=Image-background
+    row,col=np.shape(normimage)  
+    np.place(normimage,((normimage-np.amin(normimage))/np.amax(normimage))<0.3,[0,0])
+    np.place(normimage,((normimage-np.amin(normimage))/np.amax(normimage))>=0.3,[1,1])
+    return normimage
+def Label(Image):
+    '''
+    Labels each connected reigon in Image with a different number
+    '''
+    Labelled_Image = measure.label(Image, background=0,connectivity =2)
+    return(Labelled_Image)           
+def BboxImages(mask):
+    '''
+    Returns a vounding box image for each label in an image
+    '''
+    bBoxedImages = []
+    bBoxedMasks = []
+    l = Label(mask)
+    props = measure.regionprops(l,cache=False)
+    a1,b1,a2,b2=props[0].bbox     
+    return a1,a2,b1,b2 
+
+for j in range(6):
+    
+    
+    l=[]
+    r=[]
+
+    video=cv2.VideoCapture("D:\\Edinburgh_files\\data\\D550-D7-MM9-180531\\slide1\\slide1.avi")
+    ret,frame=video.read()
+    
+      
+    if ret==True:
+       gray=cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+       gray=ndimage.rotate(gray,box[j,4])
+       
+       try:
+          x1,x2=GetLengthAndWidth(gray[int(box[j,1]):int(box[j,3]),int(box[j,0]):int(box[j,2])])
+          image=gray[int(box[j,1]):int(box[j,3]),int(box[j,0]):int(box[j,2])]
+          
+          
+       except:
+          continue
+    
+##       theta=np.arctan(np.sqrt((x1[0]-x2[0])**2)/np.sqrt((x1[1]-x2[1])**2))
+##       
+##       image_rotate=ndimage.rotate(gray[int(box[j,1]):int(box[j,3]),int(box[j,0]):int(box[j,2])],theta)
+           
+##       pt.imshow(gray[int(box[j,1]):int(box[j,3]),int(box[j,0]):int(box[j,2])])
+####       pt.imshow(image_rotate)
+a1,a2,b1,b2=BboxImages(threshold(image))
+image=image[a1:a2,b1:b2]
+row,col=np.shape(image)
+##pt.imshow(threshold(image))
+skewfactor_row=[np.sqrt(stats.skew(image[:,i])**2) for i in range(col)]
+skewfactor_col=[np.sqrt(stats.skew(image[k,:])**2) for k in range(row)]
+for i in range(col):
+    pt.plot(range(row),image[:,i])
+pt.show()
+for i in range(row):
+    pt.plot(range(col),image[i,:])
+pt.show()
+row_factor=0
+col_factor=0
+for skewrow in skewfactor_row:
+    if skewrow>=1:
+       row_factor+=0
+    else:
+       row_factor+=1
+for skewcol in skewfactor_col:
+    if skewcol>=1:
+       col_factor+=0
+    else:
+       col_factor+=1
+flatness=(row_factor+col_factor)*100/(row+col)
+pt.imshow(threshold(image))
+pt.title('flatness='+str(round(flatness,2)))
+pt.show()
